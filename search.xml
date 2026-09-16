@@ -15,12 +15,12 @@
           
           <category> CTF </category>
           
+          <category> Web安全 </category>
+          
       </categories>
       
       
         <tags>
-            
-            <tag> Web </tag>
             
             <tag> MoeCTF </tag>
             
@@ -58,12 +58,12 @@
           
           <category> CTF </category>
           
+          <category> Web安全 </category>
+          
       </categories>
       
       
         <tags>
-            
-            <tag> Web </tag>
             
             <tag> MoeCTF </tag>
             
@@ -133,13 +133,13 @@
       
         <tags>
             
-            <tag> CTF </tag>
-            
             <tag> PHP </tag>
             
             <tag> 序列化与反序列化 </tag>
             
             <tag> POP链 </tag>
+            
+            <tag> CTF </tag>
             
         </tags>
       
